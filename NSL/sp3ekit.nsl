@@ -1,0 +1,62 @@
+#include "clkdep.h"
+declare ap1system interface {
+ input  btn[3], RXD, PS2D, PS2C;
+ output TXD, VGA_R, VGA_G, VGA_B, VGA_H, VGA_V;
+ output led[8], lcdo[4];
+ input  sw[8],lcdi[4];
+ func_out lcdrs, lcdre, lcdrw;
+ output sseg[8], an[4];
+
+ input m_clock, p_reset;
+}
+
+declare BUFG interface{
+ output O;
+ input  I;
+}
+
+declare DCM interface{
+ param_int CLKDV_DIVIDE;
+ param_str CLK_FEEDBACK;
+ input RST, PSINCDEC, PSEN, PSCLK, CLKIN, CLKFB;
+ output PSDONE, CLK0, CLK90, CLK180, CLK270,
+        CLK2X, CLK2X180, CLKDV, CLKFX, CLKFX180,
+	LOCKED, STATUS[8];
+}
+
+module sp3ekit {
+
+ ap1system  board;
+ BUFG buff;
+ DCM dcm_2(CLKDV_DIVIDE=4, CLK_FEEDBACK="1X");
+
+  dcm_2.RST = p_reset;
+  dcm_2.CLKIN = m_clock;
+  dcm_2.CLKFB = dcm_2.CLK0;
+  dcm_2.PSEN = 0b0;
+  dcm_2.PSCLK = 0b0;
+  dcm_2.PSINCDEC = 0b0;
+  buff.I = dcm_2.CLKDV;
+  board.m_clock = buff.O;
+  board.p_reset = p_reset;
+  TXD = board.TXD;
+  VGA_R = board.VGA_R;
+  VGA_G = board.VGA_G;
+  VGA_B = board.VGA_B;
+  VGA_H = board.VGA_H;
+  VGA_V = board.VGA_V;
+  board.PS2D = PS2D;
+  board.PS2C = PS2C;
+  board.RXD = RXD;
+  board.btn = btn;
+  led  = board.led;
+  board.sw = 0x0 || sw;
+  board.lcdi = lcdd;
+  if(^board.lcdrw) lcdd = board.lcdo;
+  }
+ function board.lcdrs lcdrs();
+ function board.lcdre lcdre();
+ function board.lcdrw lcdrw();
+
+#include "ap1system.sfl"
+

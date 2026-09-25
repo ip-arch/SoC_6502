@@ -1,0 +1,56 @@
+declare rom256 interface {
+    input      datai[8] ;
+    output     datao[8] ;
+    input      adr[8] ;
+    input      m_clock, p_reset;
+    func_in  rd(adr);
+    func_in  wt(adr,datai);
+}
+
+declare ram2k interface {
+    input      datai[8] ;
+    output     datao[8] ;
+    input      adr[11] ;
+    input      m_clock, p_reset;
+    func_in  rd(adr);
+    func_in  wt(adr,datai);
+}
+
+declare ram4k interface {
+    input      datai[8] ;
+    output     datao[8] ;
+    input      adr[12] ;
+    input      m_clock, p_reset;
+    func_in  rd(adr);
+    func_in  wt(adr,datai);
+}
+
+module rom256 {
+    reg dout[8];
+    mem mc[256][8];
+
+         dout := mc[adr];
+
+    function rd datao = dout;
+    function wt mc[adr] := datai;
+}
+
+module ram2k {
+    reg dout[8];
+    mem ram[2048][8];
+
+    dout := ram[adr];
+
+    function rd datao = dout;
+    function wt ram[adr] := datai;
+}
+
+module ram4k {
+    reg dout[8];
+    mem ram[4096][8];
+
+    dout := ram[adr];
+
+    function rd datao = dout;
+    function wt ram[adr] := datai;
+}

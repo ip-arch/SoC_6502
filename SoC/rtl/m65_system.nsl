@@ -1,0 +1,61 @@
+
+// for 1cycle latency
+
+#include "m65.inc"
+#include "m65_system.inc"
+
+#ifdef XILINX
+#define GLOBAL BUFG
+#endif
+
+declare GLOBAL interface {
+	input in;
+	output out;
+}
+
+
+module m65_system {
+	GLOBAL cbuf;
+	m65 cpu;
+	reg cpuclk=0, cpustart=0, countgo=0;
+	reg rdflg=0;
+	reg dti[8];
+	reg ck1=0,ck2=0,ck3=0;
+
+	func_self start();
+	func_self memrd();
+
+
+	/* m65 startup */ 
+	{ 
+	reg    count[16]=0xFFFF;
+	if(count==0x0001) cpustart:=1; 
+	if(count) count--;
+	if(cpustart&ck3) { start(); }
+	}  
+
+	{ck3:=ck2&~ck3&~ck1; ck2:=ck1&~ck2&~ck3; ck1:=ck3|(~ck1&~ck2);}
+
+	debug = {rdflg,cpu.debug[14:0]};
+	cbuf.in = ck1;
+	cpu.m_clock = cbuf.out;
+	cpu.data = dti;
+
+	func start seq{
+	     {cpu.start();cpustart:=0;}
+	     {cpu.start(); rdflg:=1;}
+	}
+
+	func cpu.rd any {
+		ck1: {memory_read(cpu.adrs); cpu.rdy();}
+		ck2: {dti:=datai;}
+		ck3: cpu.rdy();
+	}
+
+	func cpu.wt any {
+		 ck2: memory_write(cpu.adrs,cpu.datao);
+	}
+
+	func irq cpu.irq();
+	func nmi cpu.nmi();
+}

@@ -1,0 +1,78 @@
+#define H_DISP_END 0b0100111111  /* 319 */
+#define H_FP       0b0101000111  /* 327 */
+#define H_SYNC     0b0101110111  /* 375 */
+#define H_END      0b0110001111  /* 399 */
+#define V_DISP_END 0b0111011111  /* 479 */
+#define V_FP       0b0111101001  /* 489 */
+#define V_SYNC     0b0111101011  /* 491 */
+#define V_END      0b1000001000  /* 520 */
+module vga {
+
+	reg h_dispon=0, v_dispon=0;
+	reg h_sync=0, v_sync=0;
+	reg h_count[10]=0, v_count[10]=0, vma[10]=0, v_pos[5]=0;
+	reg    ch[7], fn[8];
+	reg vramadr[10]=0;
+	func_self vup;
+	func_self disp_char;
+
+	{
+	 h = h_sync; v = v_sync;
+	 if(v_dispon & h_dispon & (h_count[2:0] == 0b000)) disp_char();
+	 any {
+	  h_count == H_DISP_END: h_dispon := 0b0;
+	  h_count == H_FP:       h_sync := 0b1;
+	  h_count == H_SYNC:     h_sync := 0b0;
+	  h_count == H_END: {
+	                         h_dispon := 0b1;
+	                         vup();
+	                         }
+	  }
+	 any {
+	  h_count == H_END: h_count := 0b0000000000;
+	  else:             h_count := h_count + 0b0000000001;
+	  }
+	}
+     function vup {
+          any {
+	  v_count == V_DISP_END: v_dispon := 0b0;
+	  v_count == V_FP:       v_sync   := 0b1;
+	  v_count == V_SYNC:     v_sync   := 0b0;
+	  v_count == V_END:      v_dispon := 0b1;
+	  }
+          any {
+	  v_count == V_END: {
+	       v_count := 0b0000000000;
+	       }
+	  else: v_count := v_count + 0b0000000001;
+	  }
+	 alt {
+	  ~v_dispon: vramadr := 0b0000000000;
+	  v_pos == 0b10011: {
+	       any {
+	       (vramadr == 0b0111001100): vramadr := 0b0000000000;
+	       else: vramadr := vramadr + 0b0000101000;
+	       }
+	       v_pos := 0b00000;
+	     }
+	  else: v_pos := v_pos + 0b00001;
+	  }
+	}
+     function disp_char seq {
+         vma := (vramadr + {4#0b0 , h_count[8:3]});
+         ch := mr({0b0 , vma}).data[6:0];
+         any {
+	    ~v_pos[4]: fn := mr({0b1 , ch , v_pos[3:1]}).data;
+	     v_pos[4]: fn := 0x00;
+	    }
+	 if(fn[7]) {r();g();b();}
+	 if(fn[6]) {r();g();b();}
+	 if(fn[5]) {r();g();b();}
+	 if(fn[4]) {r();g();b();}
+	 if(fn[3]) {r();g();b();}
+	 if(fn[2]) {r();g();b();}
+	 if(fn[1]) {r();g();b();}
+	 if(fn[0]) {r();g();b();}
+     }
+
+}

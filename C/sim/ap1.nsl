@@ -1,0 +1,62 @@
+#include "../../m65nsl/m65.nsl"
+
+declare ap1 simulation {}
+
+module ap1 {
+
+ m65    cpu;
+ mem	in_data[256][8];
+ reg	in_index[8] = 0;
+ mem	ram8k[8192][8];
+ mem	rom4k[4096][8];
+ wire   romad[12], ramad[13], romdat[8], ramdat[8];
+
+
+// _readmemh("in_data.mem",in_data);
+ _readmemh("../sample/main.hex",rom4k);
+
+
+  _init {
+	_delay(5);
+	cpu.start();
+	_delay(2000);
+	cpu.irq();
+	cpu.irq();
+	cpu.irq();
+	_delay(1000);
+	cpu.nmi();
+	_delay(1000);
+	_finish();
+	}
+
+ cpu.rdy();
+
+ func cpu.rd any {
+	cpu.adrs[15:13] == 0: {
+		ramad = cpu.adrs[12:0];
+		ramdat = ram8k[ramad];
+		cpu.data = ramdat;
+	}
+	cpu.adrs[15:12] == 0xf: {
+		romad = cpu.adrs[11:0];
+		romdat = rom4k[romad];
+		cpu.data = romdat;
+		}
+	cpu.adrs == 0xd010: /* keyboard data */
+	        {
+		   cpu.data = 0x80 | in_data[in_index];
+		   in_index++;
+		}
+	cpu.adrs == 0xd011: /* keyboard status */
+		cpu.data = 0x80;
+	cpu.adrs == 0xd012: /* display status */
+		cpu.data = 0x00;
+	}
+ func cpu.wt any {
+	cpu.adrs[15:13] == 0: ram8k[cpu.adrs[11:0]] := cpu.datao;
+	cpu.adrs[15:12] == 0xf: rom4k[cpu.adrs[7:0]] := cpu.datao;
+	cpu.adrs == 0xd012: /* display status */
+		_display("==> %x:%c", cpu.datao&0x7f,cpu.datao&0x7f);
+	}
+}
+

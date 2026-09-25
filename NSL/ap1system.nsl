@@ -1,0 +1,129 @@
+#include "../m65nsl/m65.nsl"
+#include "mem.nsl"
+#include "serial.h"
+#include "ps2in.h"
+#include "dec7seg.h"
+
+#define VRAM 0b00010
+
+
+module ap1system {
+
+ rom256 rom;
+ ram4k  ram;
+ ram2k  vram;
+ m65    cpu;
+ serial_clkfix baudclk;
+ serial_in  serrx;
+ serial_out sertx;
+ ps2_in ps2;
+ vga ga;
+ dec7seg segdec;
+
+ reg interval[16]=0, lcddr[4]=0, lcdcr[3]=0;
+ reg ledout[8]=0, anr[4]=0, ssegr[8]=0, seg0[8]=0, seg1[8]=0, seg2[8]=0, seg3[8]=0;
+
+
+ {
+   interval := interval + 0x0001;
+   any {
+     interval[15:14] == 0b00: {anr := 0x1; ssegr := seg0; }
+     interval[15:14] == 0b01: {anr := 0x2; ssegr := seg1; }
+     interval[15:14] == 0b10: {anr := 0x4; ssegr := seg2; }
+     interval[15:14] == 0b11: {anr := 0x8; ssegr := seg3; }
+     }
+   sseg = ~ssegr; an = ~anr;
+
+   rom.m_clock = ~m_clock;
+   ram.m_clock = ~m_clock;
+   vram.m_clock = ~m_clock;
+
+   rom.p_reset = p_reset;
+   ram.p_reset = p_reset;
+   vram.p_reset = p_reset;
+
+   ps2.rxd = PS2D;
+   ps2.rxc = PS2C;
+
+   serrx.rxd = RXD;
+   TXD = sertx.txd;
+
+   VGA_R = ga.r;
+   VGA_G = ga.g;
+   VGA_B = ga.b;
+   VGA_H = ~ga.h;
+   VGA_V = ~ga.v;
+
+   if(btn[0]) cpu.irq();
+   if(btn[1]) cpu.nmi();
+   if(~btn[2]) cpu.rdy();
+
+   led = ledout;
+
+   lcdo = lcddr;
+   if(lcdcr[0]) lcdre();
+   if(lcdcr[1]) lcdrs();
+   if(lcdcr[2]) lcdrw();
+   }
+
+
+ function baudclk.baud {
+   serrx.baud();
+   sertx.baud();
+   }
+
+ function ga.mr if(~((cpu.rd | cpu.wt) & (cpu.adrs[15:11] == VRAM))) ga.data = vram.rd(ga.adr).datao;
+
+ function cpu.rd any {
+	cpu.adrs[15:12] == 0x0: cpu.data = ram.rd(cpu.adrs[11:0]).datao;
+  	cpu.adrs[15:11] == VRAM: cpu.data = vram.rd(cpu.adrs[10:0]).datao;
+	cpu.adrs[15:8] == 0xff: cpu.data = rom.rd(cpu.adrs[7:0]).datao;
+	cpu.adrs == 0xd010: /* keyboard data */
+	        {
+		   cpu.data = {0b1 , serrx.port_read().data[6:0]};
+		   if(sw[3:0]==0x0) ledout := serrx.data;
+		}
+	cpu.adrs == 0xd011: /* keyboard status */
+		cpu.data = {serrx.rxready , 0b0000000};
+	cpu.adrs == 0xd012: /* display status */
+		cpu.data = {sertx.txbusy , 0b0000000};
+	cpu.adrs == 0xd020: /* lcd display status */
+		cpu.data = {lcdi , 0x0};
+	cpu.adrs == 0xd030: /* ps2 data */
+	        {
+		   cpu.data = ps2.port_read().data;
+		}
+	cpu.adrs == 0xd031: /* ps2 status */
+		cpu.data = {ps2.rxready , 0b0000000};
+	cpu.adrs == 0xd032: /* vga status */
+		cpu.data = {ga.v , ga.h , ga.r , ga.g , ga.b , 0b000};
+	}
+ function cpu.wt any {
+	cpu.adrs[15:12] == 0x0: ram.wt(cpu.adrs[11:0],cpu.datao);
+        cpu.adrs[15:11] == VRAM: vram.wt(cpu.adrs[10:0],cpu.datao);
+	cpu.adrs[15:8] == 0xff: rom.wt(cpu.adrs[7:0],cpu.datao);
+	(cpu.adrs == 0xd012) & cpu.datao[7]: /* display data */
+	        {
+		   sertx.port_write({0b0,cpu.datao[6:0]});
+		   if(sw[3:0]==0x1) ledout := cpu.datao;
+		}
+	cpu.adrs == 0xd020: /* lcd display control */
+	        lcdcr := cpu.datao[2:0];
+	cpu.adrs == 0xd021: /* lcd display data */
+	        lcddr := cpu.datao[3:0];
+	cpu.adrs == 0xd028: /* 7seg display data */
+	        seg0 := cpu.datao;
+	cpu.adrs == 0xd029: /* 7seg display data */
+	        seg1 := cpu.datao;
+	cpu.adrs == 0xd02a: /* 7seg display data */
+	        seg2 := cpu.datao;
+	cpu.adrs == 0xd02b: /* 7seg display data */
+	        seg3 := cpu.datao;
+	}
+}
+
+#include "serial_clkfix.nsl"
+#include "serial_in.nsl"
+#include "serial_out.nsl"
+#include "ps2in.nsl"
+#include "dec7seg.nsl"

@@ -1,0 +1,32 @@
+/*******************************************************************************
+*LED: LED control module
+********************************************************************************
+* 2011.09.11   Initial version  by Y. Okuyama
+*******************************************************************************/
+
+#include "LED.inc"
+
+module LED {
+	reg		LEDR_i[16] = 0;
+	reg		LEDG_i[10]  = 0;
+
+	function read {
+		any {
+			adrs==0: return LEDR_i[7:0];
+			adrs==1: return LEDR_i[15:8];
+			adrs==2: return 8'(LEDG_i[7:0]);
+			adrs==3: return 8'(LEDG_i[9:8]);
+		}
+	}
+	function write {
+		any {
+			adrs==0: LEDR_i := {LEDR_i[15:8],datai};
+			adrs==1: LEDR_i := {datai,LEDR_i[7:0]};
+			adrs==2: LEDG_i := {LEDG_i[9:8],datai[7:0]};
+			adrs==3: LEDG_i := {datai[1:0],LEDG_i[7:0]};
+		}
+	}
+
+	LEDG = LEDG_i;
+	LEDR = LEDR_i;
+}

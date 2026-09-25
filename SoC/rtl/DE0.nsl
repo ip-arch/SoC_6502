@@ -1,0 +1,309 @@
+/*******************************************************************************
+*DE2-70: SoC exercise material for 17th PARTHENON Workshop
+*Thanks to Dr. Naohiko Shimizu, Dr. Katsunobu Nishimura and my wife, Mina.
+********************************************************************************
+* 2011.09.11,12,13   Initial version  by Y. Okuyama
+* 2013.03.21	     Adopted to snx2013
+* 2014.02.28	     Adopted to m65 by N.Shimizu
+* 2014.03.10-11	     Adopted iroiro by N.Shimizu and Y.Okuyama
+*******************************************************************************/
+
+#include "m65_system.inc"
+#include "key.inc"
+#include "sw.inc"
+#include "sound.inc"
+#include "HEX.inc"
+#include "LED.inc"
+#include "imem.inc"
+#include "dmem.inc"
+#include "LCD_controller.inc"
+#include "VGA_ctrl.inc"
+#include "ps2in.inc"
+#include "timer.inc"
+
+
+//---------Address space definition--------
+#define BASE_IMEM	16'hF000
+#define SPACE_IMEM	12
+#define BASE_DMEM	16'h0000
+#define SPACE_DMEM	13
+#define BASE_KEY	16'hA000
+#define SPACE_KEY	0
+#define BASE_SW		16'hA002
+#define SPACE_SW	1
+#define BASE_LED	16'hA004
+#define SPACE_LED	2
+#define BASE_HEX	16'hA008
+#define SPACE_HEX	3
+#define BASE_SOUND	16'hA016
+#define SPACE_SOUND	0
+#define BASE_LCD	16'hA020
+#define SPACE_LCD	5
+#define BASE_VGA	16'hC000
+#define SPACE_VGA	12
+#define BASE_VGAUB	16'hA080
+#define SPACE_VGAUB	0
+#define BASE_PS2	16'hA040
+#define SPACE_PS2	1
+#define BASE_TIMER	16'hA048
+#define SPACE_TIMER	3
+
+
+declare DE0 {
+   ////////////////////   Push Button       ////////////////////////////////
+   input  KEY[4];                         	//   Pushbutton[3:0]
+   ////////////////////   DPDT Switch       ////////////////////////////////
+   input  SW[10];                         	//   Toggle Switch[17:0]
+
+   ////////////////////   4bit DAC          ////////////////////////////////
+   output GPIO0_D[4];
+   ////////////////////   7-SEG Display     ////////////////////////////////
+   output HEX0[7];                        	//   Seven Segment Digit 0
+   output HEX1[7];                       	//   Seven Segment Digit 1
+   output HEX2[7];                        	//   Seven Segment Digit 2
+   output HEX3[7];                        	//   Seven Segment Digit 3
+   ////////////////////   LED               ////////////////////////////////
+   output LEDG[10];                        	//   LED Green[8:0]
+   ////////////////////   LCD Module 16X2   ///////////////////////////////
+   inout  LCD_DATA[8];                    	//   LCD Data bus 8 bits
+   output LCD_ON;                           //   LCD Power ON/OFF
+   output LCD_BLON;                         //   LCD Back Light ON/OFF
+   output LCD_RW;                           //   LCD Read/Write Select, 0 = Write, 1 = Read
+   output LCD_EN;                           //   LCD Enable
+   output LCD_RS;                           //   LCD Command/Data Select, 0 = Command, 1 = Data
+   ////////////////////   VGA               ////////////////////////////////
+   output VGA_R[4];
+   output VGA_G[4];
+   output VGA_B[4];
+   output VGA_HS;
+   output VGA_VS;
+   output VGA_SYNC;
+   output VGA_BLANK;
+   output VGA_CLK;
+///////////////////// PS2  ////////////////////
+   input PS2_DAT;
+   input PS2_CLK;
+}
+
+module DE0 {
+
+/**********************************************
+* Module decralations
+**********************************************/
+	imem 			imem_i;
+	dmem 			dmem_i;
+	sound			snd_i;
+	HEX  			hex_i;
+	key  			key_i;
+	LCD_controller	lcd_i;
+	LED				led_i;
+	m65_system			m65_i;
+	sw				sw_i;
+	VGA_ctrl			vga_i;
+	ps2_in			ps2_i;	
+	timer			timer_i;
+
+	reg			vgaUB[8]=0xf0;
+
+	reg rdadr[16];
+	reg fstrd =0;
+	reg fstwt =0;
+//	reg dbg_datai[8];
+	reg dbg_datao[8];
+	reg dbg_adrs[16];
+	reg dbg_rd;
+	reg dbg_wt;
+
+// Address register
+   	reg adrs_reg[16];
+
+// Internal functions
+	func_self read_imem();
+	func_self read_dmem();
+	func_self read_hex();
+	func_self read_key();
+	func_self read_lcd();
+	func_self read_led();
+	func_self read_sw();
+	func_self read_vga();
+	func_self read_vgaUB();
+	func_self read_ps2();
+	func_self read_timer();
+	func_self read_sound();
+
+// debug
+	func_self debug0();
+	func_self debug1();
+
+
+	dbg_adrs :=m65_i.adrs;
+	dbg_datao:=m65_i.datao;
+//	dbg_datai:=m65_i.datai;	
+	dbg_rd   :=m65_i.memory_read;
+	dbg_wt   :=m65_i.memory_write;
+
+/**********************************************
+* Clock management (preliminaly)
+**********************************************/
+//--------clock selector--------
+//	any{
+//		SW[17:16]==0:/* do nothing */;
+//		SW[17:16]==1:/* do nothing */;
+//		SW[17:16]==2:/* do nothing */;
+//		SW[17:16]==3:/* do nothing */;
+//	}
+
+//--------clock indicator--------
+//	LEDR[17] = ~m_clock;
+//	LEDR[16] =  m_clock;
+
+/**********************************************
+* Peripheral settings
+**********************************************/
+//--------Memories--------
+	imem_i.clock = m_clock;
+	dmem_i.clock = m_clock;
+//--------HEX--------
+	HEX0    = hex_i.HEX0[6:0];
+	HEX1    = hex_i.HEX1[6:0];
+	HEX2    = hex_i.HEX2[6:0];
+	HEX3    = hex_i.HEX3[6:0];
+//--------DAC--------
+	GPIO0_D	= snd_i.DAC;
+//--------KEY--------
+	key_i.KEY = KEY;
+//--------LCD--------
+	lcd_i.rst = p_reset;
+	lcd_i.cpu_clk = m_clock;
+	lcd_i.sys_clk = m_clock;
+	LCD_DATA = lcd_i.LCD_DATA;
+	LCD_ON   = 1;
+	LCD_BLON = 0;
+	LCD_RW   = lcd_i.LCD_RW;
+	LCD_EN   = lcd_i.LCD_EN;
+	LCD_RS   = lcd_i.LCD_RS;
+//--------LED--------
+
+	LEDG	 = {led_i.LEDG[9:0]};
+//	LEDR	 = {~m_clock, m_clock, m65_i.debug, led_i.LEDR[14:0]};
+//	LEDR	 = {~m_clock, m_clock, led_i.LEDR[15:0]};
+//	LEDR	 = {fstrd, fstwt, m65_i.debug};
+//	LEDR	 = {~m_clock, m_clock, m65_i.debug};
+//--------SW--------
+	sw_i.SW = 16'SW[9:0];
+//--------VGA--------
+	VGA_VS    = ~vga_i.VS;
+	VGA_HS    = ~vga_i.HS;
+	VGA_CLK   = vga_i.CLOCK;
+	VGA_SYNC  = ~vga_i.SYNC;
+	VGA_BLANK = ~vga_i.BLANK;
+	VGA_R     = vga_i.R[3:0];
+	VGA_G     = vga_i.G[3:0];
+	VGA_B     = vga_i.B[3:0];
+//--------- PS2 ------------
+	ps2_i.rxd = PS2_DAT;
+	ps2_i.rxc = PS2_CLK;
+
+/**********************************************
+* Interruption
+**********************************************/
+	func timer_i.into m65_i.irq();
+
+/**********************************************
+* Data-bus read operation
+**********************************************/
+	function m65_i.memory_read  any{
+		m65_i.adrs[15:SPACE_IMEM] == (BASE_IMEM>>SPACE_IMEM)[15-SPACE_IMEM:0] : read_imem();
+		m65_i.adrs[15:SPACE_DMEM] == (BASE_DMEM>>SPACE_DMEM)[15-SPACE_DMEM:0] : read_dmem();
+		m65_i.adrs[15:SPACE_HEX ] == (BASE_HEX >>SPACE_HEX )[15-SPACE_HEX :0] : read_hex();
+		m65_i.adrs[15:SPACE_KEY ] == (BASE_KEY >>SPACE_KEY )[15-SPACE_KEY :0] : read_key();
+		m65_i.adrs[15:SPACE_SOUND ] == (BASE_SOUND >>SPACE_SOUND )[15-SPACE_SOUND :0] : read_sound();
+		m65_i.adrs[15:SPACE_LCD ] == (BASE_LCD >>SPACE_LCD )[15-SPACE_LCD :0] : read_lcd();
+		m65_i.adrs[15:SPACE_LED ] == (BASE_LED >>SPACE_LED )[15-SPACE_LED :0] : read_led();
+		m65_i.adrs[15:SPACE_SW  ] == (BASE_SW  >>SPACE_SW  )[15-SPACE_SW  :0] : read_sw();
+		m65_i.adrs[15:SPACE_VGA ] == (BASE_VGA >>SPACE_VGA )[15-SPACE_VGA :0] : read_vga();
+		m65_i.adrs[15:SPACE_VGAUB ] == (BASE_VGAUB >>SPACE_VGAUB )[15-SPACE_VGAUB :0] : read_vgaUB();
+		m65_i.adrs[15:SPACE_PS2 ] == (BASE_PS2 >>SPACE_PS2 )[15-SPACE_PS2 :0] : read_ps2();
+		m65_i.adrs[15:SPACE_TIMER ] == (BASE_TIMER >>SPACE_TIMER )[15-SPACE_TIMER :0] : read_timer();
+	}
+
+	function read_imem seq {
+		 imem_i.address = m65_i.adrs[SPACE_IMEM-1:0];
+		 m65_i.datai=imem_i.q;
+	}
+
+	function read_dmem seq {	
+		 dmem_i.address = m65_i.adrs[SPACE_DMEM-1:0];
+		 m65_i.datai=dmem_i.q;
+	}
+	function read_hex seq {
+		 adrs_reg := m65_i.adrs;
+		 m65_i.datai = hex_i.read(adrs_reg[SPACE_HEX-1:0]);
+	}
+	function read_key seq {
+		 adrs_reg := m65_i.adrs;
+		 m65_i.datai = key_i.read();
+	}
+	function read_lcd seq {
+		 {lcd_i.adrs=m65_i.adrs[SPACE_LCD-1:0]; lcd_i.cs();}
+		 {m65_i.datai = lcd_i.to_cpu; lcd_i.cs();}
+	}
+	function read_led seq {
+		 {adrs_reg := m65_i.adrs;}
+		 m65_i.datai = led_i.read(adrs_reg[SPACE_LED-1:0]);
+	}
+	function read_sw seq {
+		 adrs_reg := m65_i.adrs;
+		 m65_i.datai = sw_i.read(adrs_reg[SPACE_SW-1:0]);
+	}
+	function read_sound seq {
+		adrs_reg:=m65_i.adrs;
+		m65_i.datai = snd_i.read();
+	}
+	function read_vga seq {
+		 adrs_reg := m65_i.adrs;	
+		 {	m65_i.datai = 8'(vga_i.read(adrs_reg[SPACE_VGA-1:0]).r_data);
+			vgaUB := vga_i.r_data[15:8];
+		 }
+	}
+	function read_vgaUB seq {
+		 adrs_reg := m65_i.adrs;	
+		 m65_i.datai = vgaUB;
+	}
+
+	function read_ps2 seq {
+		 adrs_reg := m65_i.adrs;
+		 any {
+			 ~adrs_reg[0]:m65_i.datai = ps2_i.port_read();
+			 else: m65_i.datai = {ps2_i.rxready ,7'd5};
+		 }
+	}
+
+	function read_timer seq {
+		 adrs_reg := m65_i.adrs;
+		 m65_i.datai = timer_i.read(adrs_reg[SPACE_TIMER-1:0]);
+	}
+/**********************************************
+* Data-bus write operation
+**********************************************/
+	function m65_i.memory_write any{
+		m65_i.adrs[15:SPACE_DMEM] ==(BASE_DMEM>>SPACE_DMEM)[15-SPACE_DMEM:0] : 
+					{fstwt:=1;dmem_i.wren(m65_i.adrs[SPACE_DMEM-1:0],m65_i.datao);}
+		m65_i.adrs[15:SPACE_HEX ] ==(BASE_HEX >>SPACE_HEX )[15-SPACE_HEX :0] :  
+					hex_i.write(m65_i.adrs[SPACE_HEX-1:0], m65_i.datao);
+		m65_i.adrs[15:SPACE_LCD ] ==(BASE_LCD >>SPACE_LCD )[15-SPACE_LCD :0] :  
+					{lcd_i.we(m65_i.adrs[SPACE_LCD-1:0], m65_i.datao);lcd_i.cs();}
+		m65_i.adrs[15:SPACE_LED ] ==(BASE_LED >>SPACE_LED )[15-SPACE_LED :0] :  
+					{led_i.write(m65_i.adrs[SPACE_LED-1:0], m65_i.datao);}
+		m65_i.adrs[15:SPACE_SOUND ] ==(BASE_SOUND >>SPACE_SOUND )[15-SPACE_SOUND :0] :  
+					{snd_i.write(m65_i.datao);}
+		m65_i.adrs[15:SPACE_VGA ] ==(BASE_VGA >>SPACE_VGA )[15-SPACE_VGA :0] :  
+					vga_i.write(m65_i.adrs[SPACE_VGA-1:0], {vgaUB,m65_i.datao});
+		m65_i.adrs[15:SPACE_VGAUB ] ==(BASE_VGAUB >>SPACE_VGAUB )[15-SPACE_VGAUB :0] :  
+					vgaUB := m65_i.datao;
+
+		m65_i.adrs[15:SPACE_TIMER ] ==(BASE_TIMER >>SPACE_TIMER )[15-SPACE_TIMER :0] :  
+					timer_i.write(m65_i.adrs[SPACE_TIMER-1:0], m65_i.datao);
+
+	}
+}
